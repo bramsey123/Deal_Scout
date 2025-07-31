@@ -1,0 +1,11 @@
+# Python virtual environment
+.venv/
+
+# Secrets file
+.env
+
+# Mac system file
+.DS_Store
+
+# VS Code workspace settings
+.vscode/

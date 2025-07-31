@@ -1,0 +1,15 @@
+airtable-python-wrapper==0.15.3
+beautifulsoup4==4.13.4
+certifi==2025.7.14
+charset-normalizer==3.4.2
+idna==3.10
+python-dotenv==1.1.1
+requests==2.32.4
+soupsieve==2.7
+typing_extensions==4.14.1
+urllib3==2.5.0
+playwright==1.41.0
+pandas==2.1.4
+openpyxl==3.1.2
+lxml==4.9.3
+fake-useragent==1.4.0
