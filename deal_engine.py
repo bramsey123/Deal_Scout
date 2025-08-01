@@ -24,7 +24,8 @@ airtable = Airtable(AIRTABLE_BASE, AIRTABLE_TABLE, AIRTABLE_TOKEN)
 # URLs
 MARKETS = {
     "BizBuySell": "https://www.bizbuysell.com/business-brokers/texas/houston-businesses-for-sale/",
-    "DealStream": "https://dealstream.com/texas-businesses-for-sale?location=Houston"
+    "DealStream": "https://dealstream.com/texas-businesses-for-sale?location=Houston",
+    "BizQuest": "https://www.bizquest.com/businesses-for-sale/?state=Texas"
 }
 import csv
 from io import StringIO
@@ -182,6 +183,135 @@ def scrape_dealstream_playwright():
     
     return listings
 
+def scrape_bizquest_requests():
+    """Scrape BizQuest.com using requests with human-like headers"""
+    print("Fetching BizQuest with requests...")
+    listings = []
+    
+    # Human-like session setup
+    session = requests.Session()
+    ua = UserAgent()
+    
+    headers = {
+        'User-Agent': ua.chrome,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
+    }
+    
+    session.headers.update(headers)
+    
+    # Add random delay to mimic human behavior
+    time.sleep(random.uniform(1, 3))
+    
+    try:
+        # First visit the homepage to establish session
+        session.get('https://www.bizquest.com', timeout=10)
+        time.sleep(random.uniform(1, 2))
+        
+        # Then get the Texas listings
+        response = session.get(MARKETS["BizQuest"], timeout=15)
+        response.raise_for_status()
+        
+        print(f"✓ BizQuest fetched successfully ({len(response.content)} bytes)")
+        
+        # Save for debugging
+        with open('/tmp/bizquest_requests_debug.html', 'w') as f:
+            f.write(response.text)
+        print(f"📄 Saved BizQuest HTML to /tmp/bizquest_requests_debug.html")
+        
+        soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Look for business listings using multiple approaches
+        
+        # Try common BizQuest selectors first
+        listing_selectors = [
+            'div.business-listing',
+            'div.listing-item', 
+            'div.search-result',
+            'article.listing',
+            'div[class*="listing"]',
+            'div[class*="business"]'
+        ]
+        
+        containers = []
+        for selector in listing_selectors:
+            containers = soup.select(selector)
+            if containers:
+                print(f"Found {len(containers)} listings with selector: {selector}")
+                break
+        
+        # If no specific containers found, look more broadly
+        if not containers:
+            containers = soup.find_all(['div', 'article'], class_=lambda x: x and any(
+                term in str(x).lower() for term in ['listing', 'business', 'result', 'item']
+            ))
+        
+        # Parse each container
+        for container in containers[:20]:  # Limit to first 20 to avoid noise
+            try:
+                # Look for title/link
+                title_elem = (
+                    container.find('a', class_=lambda x: x and 'title' in str(x).lower()) or
+                    container.find(['h1', 'h2', 'h3', 'h4']) or
+                    container.find('a')
+                )
+                
+                if not title_elem:
+                    continue
+                    
+                title = title_elem.get_text(strip=True)
+                if not title or len(title) < 5:
+                    continue
+                
+                # Get URL
+                url = title_elem.get('href') if title_elem.name == 'a' else None
+                if url and not url.startswith('http'):
+                    url = 'https://www.bizquest.com' + url
+                
+                # Look for price
+                price = None
+                price_text = container.get_text()
+                import re
+                price_match = re.search(r'\$[\d,]+', price_text)
+                if price_match:
+                    price = price_match.group()
+                
+                # Look for location
+                location = None
+                location_elem = container.find(string=re.compile(r'[A-Z]{2}|Texas|Houston|Dallas|Austin'))
+                if location_elem:
+                    location = location_elem.strip()
+                
+                listing = {
+                    "source": "BizQuest",
+                    "title": title,
+                    "url": url,
+                    "price": price,
+                    "location": location,
+                    "description": None,
+                    "scraped_at": datetime.now().isoformat()
+                }
+                listings.append(listing)
+                
+            except Exception:
+                continue
+        
+        print(f"✓ Parsed {len(listings)} BizQuest listings")
+        
+    except Exception as e:
+        print(f"⚠️ BizQuest requests failed: {e}")
+    
+    return listings
+
 def scrape_sba_feed(url):
     """
     Accepts either a CSV or XLS/XLSX SBA loan feed and returns a
@@ -263,6 +393,14 @@ def run_engine():
         print(f"✓ Found {len(dealstream_listings)} DealStream listings")
     except Exception as e:
         print(f"⚠️ DealStream scraping failed: {e}")
+
+    # Scrape BizQuest
+    try:
+        bizquest_listings = scrape_bizquest_requests()
+        all_listings.extend(bizquest_listings)
+        print(f"✓ Found {len(bizquest_listings)} BizQuest listings")
+    except Exception as e:
+        print(f"⚠️ BizQuest scraping failed: {e}")
 
     # --- SBA feed temporarily disabled ---------------------------------
     # try:
